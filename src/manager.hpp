@@ -86,7 +86,7 @@ struct DBManagerConfig
 class RegionView
 {
 public:
-    RegionView(DTL::EphemeralRegion* ephemeral, TableView view, TableConfig baseTableConf);
+    RegionView(DTL::EphemeralRegion* ephemeral, TableView view, TableConfig baseTableConf, DTL::API* api);
     ~RegionView();
     std::vector<int> ReadColumns();
     void ReadColumnsOut(int* out);
@@ -101,6 +101,7 @@ private:
     TableConfig m_BaseTableConf;
     int* m_ReadPtr;
     DTL::EphemeralRegion* m_Ephemeral;
+    DTL::API* m_API;
 };
 
 

@@ -126,7 +126,7 @@ std::string DBManager::RunQuerySplit(SplitQuery query)
         m_dtlAPI->ProgramHardware(region);
 
 
-        filterRegions.push_back(new RegionView(region, query.filter[x], m_TableConfigs[f.table])); // wrap this in a class so we can incrementall read what we need
+        filterRegions.push_back(new RegionView(region, query.filter[x], m_TableConfigs[f.table], m_dtlAPI)); // wrap this in a class so we can incrementall read what we need
         x++;
     }
 
@@ -138,7 +138,7 @@ std::string DBManager::RunQuerySplit(SplitQuery query)
         }
         m_dtlAPI->ProgramHardware(selEphemeral);
 
-    RegionView* selectionRegion  = new RegionView(selEphemeral, query.selection, m_TableConfigs[query.selection.table]);
+    RegionView* selectionRegion  = new RegionView(selEphemeral, query.selection, m_TableConfigs[query.selection.table], m_dtlAPI);
     auto selTable =  m_TableConfigs[query.selection.table];
 
     int* dataOut = new int[selectionRegion->MaxSize()];
@@ -201,7 +201,7 @@ std::string DBManager::RunQuery(Query query)
     }
     m_dtlAPI->ProgramHardware(region);
 
-    RegionView* region_view = new RegionView(region, query.view, tableConf);
+    RegionView* region_view = new RegionView(region, query.view, tableConf, m_dtlAPI);
 
     int* dataOut = new int[query.filterCols + query.selCols];
     int x = 0;
@@ -256,15 +256,15 @@ std::string DBManager::TableView2Config(TableView t)
     return CreateDTLConstants(t.columns, tableConf.col_count) + "\n" + InsertDTLConfigParameters(tableConf);
 }
 
-RegionView::RegionView(DTL::EphemeralRegion *ephemeral, TableView view, TableConfig baseTableConf) : m_BaseTableConf(baseTableConf), m_View(view), \
-    m_Loc(0), m_Ephemeral(ephemeral)
+RegionView::RegionView(DTL::EphemeralRegion *ephemeral, TableView view, TableConfig baseTableConf, DTL::API* api) : m_BaseTableConf(baseTableConf), m_View(view), \
+    m_Loc(0), m_Ephemeral(ephemeral), m_API(api)
 {
     m_ReadPtr  = (int*)ephemeral->GetHeadlessReadRegion();
 }
 
 RegionView::~RegionView()
 {
-    delete m_Ephemeral;
+    m_API->FreeEphemeralRegion(m_Ephemeral);
 }
 
 std::vector<int> RegionView::ReadColumns()
