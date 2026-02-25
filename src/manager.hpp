@@ -51,19 +51,19 @@ struct TableConfig
     int col_count;
     int col_size;
 };
-std::string InsertDTLConfigParameters(TableConfig tableConf);
+std::string InsertDTLConfigParameters(TableConfig tableConf, int view_col_count);
 std::string CreateDTLConstants(std::vector<uint32_t> columns, int row_size);
 
 struct SplitQuery
 {
-    std::function<bool(const std::vector<int>& f)> filterFunc;
+    std::vector<std::function<bool(const std::vector<int>&)>> filterFunc;
     std::vector<TableView> filter;
     TableView selection;
 };
 
 struct Query
 {
-    std::function<bool(const std::vector<int>& f)> filterFunc;;
+    std::function<bool(const std::vector<int>& f)> filterFunc;
     int filterCols; // We will always place the filter columns first
     int selCols;    // selection columns come immediately after
     TableView view;

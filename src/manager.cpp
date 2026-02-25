@@ -2,11 +2,11 @@
 
 
 
-std::string InsertDTLConfigParameters(TableConfig tableConf)
+std::string InsertDTLConfigParameters(TableConfig tableConf, int view_col_count)
 {
     std::unordered_map<std::string, int> params = {
         {"ROWS", tableConf.rows},
-        {"COLUMNS", tableConf.col_count}
+        {"COLUMNS", view_col_count}
     };
 
     std::string dtl_parameterized_config = proj_stencil;
@@ -25,7 +25,7 @@ std::string InsertDTLConfigParameters(TableConfig tableConf)
 std::string CreateDTLConstants(std::vector<uint32_t> columns, int row_size) 
 {
     std::string ret;
-    ret += "int row_size = " + std::to_string(row_size) + "\n";
+    ret += "int row_size = " + std::to_string(row_size) + ";\n";
 
     ret += "int col_offsets = {";
     for (auto& x: columns)
@@ -90,7 +90,7 @@ DBManager::DBManager(DBManagerConfig config, DTL::AGUHardwareStat *hwStat)
         auto dummyTable = m_dtlAPI->AllocEphemeralRegion(size); // new DTL::EphemeralRegion(size*i, size, i, 0x170000000UL, hwStat);
         int* tableWrite  = (int*)dummyTable->GetHeadlessWriteregion();
         auto tableConf = config.tableConfigs[i];
-        randomize_region_deterministic_int(tableWrite, tableConf.rows*tableConf.col_count);
+        randomize_region_deterministic_int(tableWrite, size/sizeof(int));
         m_DummyRegions.push_back(dummyTable);
         m_TableConfigs.push_back(tableConf);
     }
@@ -114,26 +114,26 @@ std::string DBManager::RunQuerySplit(SplitQuery query)
 
     std::vector<RegionView*> filterRegions;
 
-    int x = 0 ;
+    int a = 0 ;
     for (auto& f: query.filter)
     {
         auto region = m_dtlAPI->CloneEphemeralRegion(m_DummyRegions[f.table]);
 
-        if (!m_dtlAPI->Compile(filterViews[x])) {
-            printf("Failed to compile dtl program or map onto agu. View %d\n", x);
+        if (!m_dtlAPI->Compile(filterViews[a])) {
+            printf("Failed to compile dtl program or map onto agu. View %d\n", a);
             return "Failed to compile dtl program or map onto agu\n";
         }
         m_dtlAPI->ProgramHardware(region);
 
 
-        filterRegions.push_back(new RegionView(region, query.filter[x], m_TableConfigs[f.table], m_dtlAPI)); // wrap this in a class so we can incrementall read what we need
-        x++;
+        filterRegions.push_back(new RegionView(region, query.filter[a], m_TableConfigs[f.table], m_dtlAPI)); // wrap this in a class so we can incrementall read what we need
+        a++;
     }
 
 
     auto selEphemeral = m_dtlAPI->CloneEphemeralRegion(m_DummyRegions[query.selection.table]);
         if (!m_dtlAPI->Compile(selectionView)) {
-            printf("Failed to compile dtl program or map onto agu. View %d\n", x);
+            printf("Failed to compile dtl program or map onto agu. View %d\n", a);
             return "Failed to compile dtl program or map onto agu\n";
         }
         m_dtlAPI->ProgramHardware(selEphemeral);
@@ -142,17 +142,30 @@ std::string DBManager::RunQuerySplit(SplitQuery query)
     auto selTable =  m_TableConfigs[query.selection.table];
 
     int* dataOut = new int[selectionRegion->MaxSize()];
-    std::vector<int> filterVals;
+   // std::vector<int> filterVals;
+    bool write_out = true;
+    int x = 0 ;
     perf.CollectCounters();
     for (int i = 0; i < selTable.rows; i++)
     {
+         bool write_out = true;
         for (int j = 0; j < filterViews.size(); j++)
         {
              auto vector =  filterRegions[j]->ReadColumns();
-             filterVals.insert(filterVals.end(), vector.begin(), vector.end());
+             assert(vector.size() == query.filter[j].columns.size());
+             //filterVals.insert(filterVals.end(), vector.begin(), vector.end());
+
+             if (!query.filterFunc[j](vector)) // if we fail any condition
+             {
+                for (int l = j+1; l < filterViews.size(); l++)
+                    filterRegions[l]->AdvanceN(query.filter[l].columns.size());
+                selectionRegion->AdvanceN(query.selection.columns.size());
+                write_out = false;
+                break;
+             }
         }
 
-        if (query.filterFunc(filterVals))
+        if (write_out)
         {
             // dataOut[x++] =  selectionView->ReadCols();
             selectionRegion->ReadColumnsOut(&dataOut[x]);
@@ -160,10 +173,10 @@ std::string DBManager::RunQuerySplit(SplitQuery query)
         }
 
 
-        filterVals.clear();
+       // filterVals.clear();
     }
     perf.CollectDelta();
-
+        printf("GOT X SPLIT %d\n", x);
 
 
     // Hash dataOut//
@@ -203,18 +216,18 @@ std::string DBManager::RunQuery(Query query)
 
     RegionView* region_view = new RegionView(region, query.view, tableConf, m_dtlAPI);
 
-    int* dataOut = new int[query.filterCols + query.selCols];
+    int* dataOut = new int[(query.filterCols + query.selCols)*tableConf.rows];
     int x = 0;
-    std::vector<int> filterVals;
+   // std::vector<int> filterVals;
     perf.CollectCounters();
     for (int i = 0; i < tableConf.rows; i++)
     {
 
         auto vector =  region_view->ReadNColumns(query.filterCols);
-        filterVals.insert(filterVals.end(), vector.begin(), vector.end());
+        //filterVals.insert(filterVals.end(), vector.begin(), vector.end());
         bool flag = false;
 
-        if (query.filterFunc(filterVals))
+        if (query.filterFunc(vector))
         {
             // dataOut[x++] =  selectionView->ReadCols();
             region_view->ReadNColumnsOut(&dataOut[x], query.selCols);
@@ -228,10 +241,10 @@ std::string DBManager::RunQuery(Query query)
             region_view->AdvanceN(query.selCols);
 
 
-        filterVals.clear();
+        //filterVals.clear();
     }
     perf.CollectDelta();
-
+        printf("GOT X BASE %d\n", x);
 
 
     // Hash dataOut//
@@ -253,7 +266,7 @@ std::string DBManager::TableView2Config(TableView t)
 {
     std::string conf;
     auto tableConf = m_TableConfigs[t.table];
-    return CreateDTLConstants(t.columns, tableConf.col_count) + "\n" + InsertDTLConfigParameters(tableConf);
+    return CreateDTLConstants(t.columns, tableConf.col_count) + "\n" + InsertDTLConfigParameters(tableConf, t.columns.size());
 }
 
 RegionView::RegionView(DTL::EphemeralRegion *ephemeral, TableView view, TableConfig baseTableConf, DTL::API* api) : m_BaseTableConf(baseTableConf), m_View(view), \

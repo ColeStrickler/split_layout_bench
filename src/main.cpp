@@ -19,15 +19,29 @@ static DBManagerConfig globalConf = {
 
 std::vector<SplitQuery> splitQuery = {
     {
-        .filterFunc = [](const std::vector<int>& f) -> bool {
-            assert(f.size() == 4);
-            return (f[0] < 256) && (f[1] > 64) && (f[2] % 2 == 0) && (f[3] > 128);
+        .filterFunc = {
+                [](const std::vector<int>& i) -> bool {
+
+                    return (i[0] < 256);
+                },
+                [](const std::vector<int>& i) -> bool {
+
+                    return  (i[0] > 64);
+                },
+                [](const std::vector<int>& i) -> bool {
+
+                    return  (i[0] % 2 == 0);
+                },
+                [](const std::vector<int>& i) -> bool {
+
+                    return  (i[0] > 128);
+                },
         },
         .filter = {
             {.table = 0, .columns = {C3}},
             {.table = 0, .columns = {C8}},
             {.table = 0, .columns = {C10}},
-            {.table = 0, .columns = {C5}},
+            {.table = 0, .columns = {C15}},
         },
         .selection = {
             .table = 0,
@@ -55,6 +69,7 @@ std::vector<Query> baseQuery = {
 int main()
 {
     auto hwStat = new DTL::AGUHardwareStat(4, 4, 5, 6, 5, 4, 1, 1, 2);
+    hwStat->nMaxConfigs = 8;
     auto manager =  new DBManager(globalConf, hwStat);
 
 
