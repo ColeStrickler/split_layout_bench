@@ -58,14 +58,14 @@ struct SplitQuery
 {
     std::vector<std::function<bool(const std::vector<int>&)>> filterFunc;
     std::vector<TableView> filter;
-    TableView selection;
+    TableView projection;
 };
 
 struct Query
 {
     std::function<bool(const std::vector<int>& f)> filterFunc;
     int filterCols; // We will always place the filter columns first
-    int selCols;    // selection columns come immediately after
+    int projCols;    // selection columns come immediately after
     TableView view;
 };
 

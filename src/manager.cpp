@@ -48,7 +48,7 @@ std::string SplitQuery2InfoString(SplitQuery query)
     
     ret += "__";
 
-    for (auto& s: query.selection.columns)
+    for (auto& s: query.projection.columns)
         ret += std::to_string(s) + "-";
 
     return ret;
@@ -66,7 +66,7 @@ std::string Query2InfoString(Query query)
     
     ret += "__";
 
-    for (int i = 0; i < query.selCols; i++)
+    for (int i = 0; i < query.projCols; i++)
     {
 
         ret += std::to_string(query.view.columns[query.filterCols + i]) + "-";
@@ -103,13 +103,13 @@ std::string DBManager::RunQuerySplit(SplitQuery query)
     PerfManager perf;
     std::string results;
     std::vector<std::string> filterViews;
-    std::string selectionView;
+    std::string projectionView;
 
 
     for (auto& t: query.filter)
         filterViews.push_back(TableView2Config(t));
 
-    selectionView = TableView2Config(query.selection);
+    projectionView = TableView2Config(query.projection);
 
 
     std::vector<RegionView*> filterRegions;
@@ -131,15 +131,15 @@ std::string DBManager::RunQuerySplit(SplitQuery query)
     }
 
 
-    auto selEphemeral = m_dtlAPI->CloneEphemeralRegion(m_DummyRegions[query.selection.table]);
-        if (!m_dtlAPI->Compile(selectionView)) {
+    auto selEphemeral = m_dtlAPI->CloneEphemeralRegion(m_DummyRegions[query.projection.table]);
+        if (!m_dtlAPI->Compile(projectionView)) {
             printf("Failed to compile dtl program or map onto agu. View %d\n", a);
             return "Failed to compile dtl program or map onto agu\n";
         }
         m_dtlAPI->ProgramHardware(selEphemeral);
 
-    RegionView* selectionRegion  = new RegionView(selEphemeral, query.selection, m_TableConfigs[query.selection.table], m_dtlAPI);
-    auto selTable =  m_TableConfigs[query.selection.table];
+    RegionView* selectionRegion  = new RegionView(selEphemeral, query.projection, m_TableConfigs[query.projection.table], m_dtlAPI);
+    auto selTable =  m_TableConfigs[query.projection.table];
 
     int* dataOut = new int[selectionRegion->MaxSize()];
    // std::vector<int> filterVals;
@@ -159,7 +159,7 @@ std::string DBManager::RunQuerySplit(SplitQuery query)
              {
                 for (int l = j+1; l < filterViews.size(); l++)
                     filterRegions[l]->AdvanceN(query.filter[l].columns.size());
-                selectionRegion->AdvanceN(query.selection.columns.size());
+                selectionRegion->AdvanceN(query.projection.columns.size());
                 write_out = false;
                 break;
              }
@@ -167,9 +167,9 @@ std::string DBManager::RunQuerySplit(SplitQuery query)
 
         if (write_out)
         {
-            // dataOut[x++] =  selectionView->ReadCols();
+            // dataOut[x++] =  projectionView->ReadCols();
             selectionRegion->ReadColumnsOut(&dataOut[x]);
-            x += query.selection.columns.size();
+            x += query.projection.columns.size();
         }
 
 
@@ -216,7 +216,7 @@ std::string DBManager::RunQuery(Query query)
 
     RegionView* region_view = new RegionView(region, query.view, tableConf, m_dtlAPI);
 
-    int* dataOut = new int[(query.filterCols + query.selCols)*tableConf.rows];
+    int* dataOut = new int[(query.filterCols + query.projCols)*tableConf.rows];
     int x = 0;
    // std::vector<int> filterVals;
     perf.CollectCounters();
@@ -229,16 +229,16 @@ std::string DBManager::RunQuery(Query query)
 
         if (query.filterFunc(vector))
         {
-            // dataOut[x++] =  selectionView->ReadCols();
-            region_view->ReadNColumnsOut(&dataOut[x], query.selCols);
-            x += query.selCols;
+            // dataOut[x++] =  projectionView->ReadCols();
+            region_view->ReadNColumnsOut(&dataOut[x], query.projCols);
+            x += query.projCols;
             flag = true;
         }
 
 
 
         if (!flag)
-            region_view->AdvanceN(query.selCols);
+            region_view->AdvanceN(query.projCols);
 
 
         //filterVals.clear();
