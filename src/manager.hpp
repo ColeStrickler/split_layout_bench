@@ -59,6 +59,7 @@ struct SplitQuery
     std::vector<std::function<bool(const std::vector<int>&)>> filterFunc;
     std::vector<TableView> filter;
     TableView projection;
+    std::string label;
 };
 
 struct Query
@@ -67,6 +68,7 @@ struct Query
     int filterCols; // We will always place the filter columns first
     int projCols;    // selection columns come immediately after
     TableView view;
+    std::string label;
 };
 
 
@@ -113,11 +115,13 @@ public:
     ~DBManager();
     std::string RunQuerySplit(SplitQuery query);
     std::string RunQuery(Query query);
+    std::string RunQueryCPU(Query query);
     std::string TableView2Config(TableView t);
 private:
     std::vector<TableConfig> m_TableConfigs;
     DTL::API* m_dtlAPI;
     std::vector<DTL::EphemeralRegion*> m_DummyRegions; //These regions are not allocated a config, they are just used to manage tables
+    std::vector<int*> m_CPUTables;
 
 };
 

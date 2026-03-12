@@ -93,6 +93,10 @@ DBManager::DBManager(DBManagerConfig config, DTL::AGUHardwareStat *hwStat)
         randomize_region_deterministic_int(tableWrite, size/sizeof(int));
         m_DummyRegions.push_back(dummyTable);
         m_TableConfigs.push_back(tableConf);
+
+        int* cpuTable = new int[tableConf.rows*tableConf.col_count];
+        randomize_region_deterministic_int(cpuTable, tableConf.rows*tableConf.col_count);
+        m_CPUTables.push_back(cpuTable);
     }
 
 
@@ -184,7 +188,7 @@ std::string DBManager::RunQuerySplit(SplitQuery query)
     std::string queryInfo = SplitQuery2InfoString(query);
 
 
-    results += queryInfo + "," + perf.PrintCounters() +  "," + checksum + "\n";
+    results += "split_packed," +  queryInfo + "," + perf.PrintCounters() +  "," + checksum + "," + query.label  + "\n";
 
 
     delete selectionRegion; // this will also delete ephemeral
@@ -252,7 +256,7 @@ std::string DBManager::RunQuery(Query query)
     std::string queryInfo = Query2InfoString(query);
 
 
-    results += queryInfo + "," + perf.PrintCounters() +  "," + checksum + "\n";
+    results += "base_packed," + queryInfo + "," + perf.PrintCounters() +  "," + checksum + "," + query.label  + "\n";
 
 
     delete region_view;
@@ -262,6 +266,48 @@ std::string DBManager::RunQuery(Query query)
     return results;
 }
 
+std::string DBManager::RunQueryCPU(Query query) 
+{
+    PerfManager perf;
+    std::string results;
+
+    TableConfig tableConf = m_TableConfigs[query.view.table];
+    int* dataOut = new int[(query.filterCols + query.projCols)*tableConf.rows];
+    int x = 0;
+
+
+    int* table = m_CPUTables[query.view.table];
+    perf.CollectCounters();
+    for (int i = 0; i < tableConf.rows; i++)
+    {
+
+        std::vector<int> filterVec;
+        for (int j = 0; j < query.filterCols; j++)
+            filterVec.push_back(table[i*tableConf.col_count + query.view.columns[j]]);
+
+
+        if (query.filterFunc(filterVec))
+        {
+            for (int j = 0; j < query.projCols; j++)
+                dataOut[x++] = table[i*tableConf.col_count + query.view.columns[query.filterCols+j]];
+        }
+
+    }
+    perf.CollectDelta();
+
+
+    // Hash dataOut//
+    std::string checksum = print_checksum_i32(dataOut, x);
+    std::string queryInfo = Query2InfoString(query);
+
+
+    results += "cpu_only," + queryInfo + "," + perf.PrintCounters() +  "," + checksum + "," + query.label + "\n";
+
+
+    delete[] dataOut;
+
+    return results;
+}
 std::string DBManager::TableView2Config(TableView t) 
 {
     std::string conf;
